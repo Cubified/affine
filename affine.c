@@ -10,7 +10,6 @@
 #include <sys/ioctl.h>
 #include <math.h>
 
-#define STBI_NO_BMP
 #define STBI_NO_PSD
 #define STBI_NO_TGA
 #define STBI_NO_GIF
@@ -20,12 +19,21 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+#define OVERFLOW(a, min, max, val) (a > max ? val : (a < min ? val : a))
+#define GET_PIXEL(arr, x, y, w, h, n) \
+  arr[OVERFLOW((int)floor((y*w*n)+(x*n)+0), 0, w*h*n, 0)], \
+  arr[OVERFLOW((int)floor((y*w*n)+(x*n)+1), 0, w*h*n, 0)], \
+  arr[OVERFLOW((int)floor((y*w*n)+(x*n)+2), 0, w*h*n, 0)]
+
+#define MIN(a, b) (a > b ? b : a)
+#define MAX(a, b) (a > b ? a : b)
+
 enum {
   MODE_VIEW,
   MODE_AFFINE
 };
 
-unsigned char *data;
+unsigned char *data, *out;
 int iw, ih, in;
 
 void stop(){
@@ -38,10 +46,12 @@ void stop(){
   printf("\033c\033[0;0H\033[?25h");
 
   stbi_image_free(data);
+  free(out);
 
   exit(0);
 }
 
+/* Fairly unoptimized and ugly (especially mode7) */
 void loop(int mode){
   struct winsize ws;
   double x0, y0,
@@ -52,47 +62,91 @@ void loop(int mode){
          xprime, yprime,
          theta = M_PI,
          horizon = h/2,
-         height, tilt = 0;
+         height = 15,
+         tilt = 0,
+         zoom = 1,
+         velocity = 0,
+         accel = 0.1,
+         decel = 0.1,
+         max_vel = 10,
+         turn_velocity = 0,
+         turn_accel = M_PI / 2048,
+         turn_decel = M_PI / 2048,
+         turn_max_vel = M_PI / 128;
   int i_dest, inc,
       ix, iy;
   char c;
-  unsigned char *out;
-
-  ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
 
   w = (double)iw;
   h = (double)ih;
   n = (double)in;
 
-  x0 = -w/2;
-  y0 = h/2;
+  if(mode == MODE_VIEW){
+    x0 = 0;
+    y0 = 0;
+  } else if(mode == MODE_AFFINE){
+    x0 = -w/2;
+    y0 = h/2;
+  }
 
-  height = 3;
+  ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
 
   do {
-    if(c == 'q' || c == 27) { stop(); }
-    
-    if(c == 'w') { y0 += 1; }
-    if(c == 's') { y0 -= 1; }
-    if(c == 'a') { theta += 0.01; }
-    if(c == 'd') { theta -= 0.01; }
-    
-    if(c == 'e') { tilt += 5; }
-    if(c == 'c') { tilt -= 5; }
-
-    if(c == 'r') { height += 1; }
-    if(c == 'v') { height -= 1; }
+    if(c == 'q') { stop(); }
+    if(c == '\033'){
+      if(getchar() == 91){
+        switch(getchar()){
+          case 65:
+            y0 -= 10;
+            break;
+          case 66:
+            y0 += 10;
+            break;
+          case 67:
+            x0 += 10;
+            break;
+          case 68:
+            x0 -= 10;
+            break;
+        }
+      }
+    }
 
     printf("\033[0;0H");
 
     if(mode == MODE_VIEW){
-      for(y=0;y<h;y++){
-        for(x=0;x<w;x++){
-          printf("\033[48;2;%i;%i;%im ", data[(int)round((y*w*n)+(x*n))], data[(int)round((y*w*n)+(x*n)+1)], data[(int)round((y*w*n)+(x*n)+2)]);
+      if(c == '+') { zoom += 0.1; }
+      if(c == '-') { zoom -= 0.1; }
+
+      for(y=0;y<ws.ws_row;y++){
+        for(x=0;x<ws.ws_col;x++){
+          printf(
+            "\033[48;2;%i;%i;%im ",
+            GET_PIXEL(data, floor((((x/ws.ws_col)*w)+x0)/zoom), floor((((y/ws.ws_row)*h)+y0)/zoom), w, h, n)
+          );
         }
       }
     } else if(mode == MODE_AFFINE){
-      out = malloc(iw*ih*in);
+      if(c == 'w') { velocity = MIN(velocity+accel, max_vel); }
+      else if(c == 's') { velocity = MAX(velocity-accel, -max_vel); }
+      else if(velocity < 0) { velocity = MIN(velocity+decel, 0); }
+      else { velocity = MAX(velocity-decel, 0); }
+
+      x0 += velocity * sin(theta);
+      y0 += velocity * cos(theta);
+
+      if(c == 'a') { turn_velocity = MIN(turn_velocity+turn_accel, turn_max_vel); }
+      else if(c == 'd') { turn_velocity = MAX(turn_velocity-turn_accel, -turn_max_vel); }
+      else if(turn_velocity < 0) { turn_velocity = MIN(turn_velocity+turn_decel, 0); }
+      else { turn_velocity = MAX(turn_velocity-turn_decel, 0); }
+      
+      theta += turn_velocity;
+
+      if(c == 'e') { tilt += 5; }
+      if(c == 'c') { tilt -= 5; }
+
+      if(c == 'r') { height += 1; }
+      if(c == 'v') { height -= 1; }
 
       for(i=w*n*horizon;i<w*h*n;i+=n){
         y = floor(i/(n*w));
@@ -110,7 +164,8 @@ void loop(int mode){
           yprime = floor((xtemp * sin(theta)) + (ytemp * cos(theta)) + y0);
 
           if(xprime >= 0 && xprime <= w &&
-             yprime >= 0 && yprime <= h){
+             yprime >= 0 && yprime <= h &&
+             xtemp >= -w/2 && ytemp >= 0){
             i_dest = ((yprime * w) + xprime) * n;
 
             if(i_dest < w*h*n){
@@ -124,11 +179,7 @@ void loop(int mode){
 
       for(iy=0;iy<ws.ws_row;iy++){
         for(ix=0;ix<ws.ws_col;ix++){
-          if(iy < ws.ws_row/2){
-            printf("\033[48;2;0;0;0m ");
-          } else {
-            printf("\033[48;2;%i;%i;%im ", out[(iy*iw*in)+(ix*in)], out[(iy*iw*in)+(ix*in)+1], out[(iy*iw*in)+(ix*in)+2]);
-          }
+          printf("\033[48;2;%i;%i;%im ", GET_PIXEL(out, floor(((double)ix/ws.ws_col)*w), floor(((double)iy/ws.ws_row)*h), iw, ih, in));
         }
       }
     }
@@ -148,6 +199,8 @@ void init(char *file){
   }
 
   printf("\033[?25l");
+
+  out = malloc(iw*ih*in);
 }
 
 int main(int argc, char **argv){
