@@ -4,7 +4,13 @@ A dependency-free terminal-based image viewer.  Capable of displaying images in 
 
 ### Screenshots
 
-To-do
+View mode:
+
+![View mode](https://github.com/Cubified/affine/blob/main/screenshots/view.png)
+
+Affine mode (still a work in progress):
+
+![Affine mode](https://github.com/Cubified/affine/blob/main/screenshots/affine.gif)
 
 ### Compiling and Running
 

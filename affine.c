@@ -10,7 +10,6 @@
 #include <sys/ioctl.h>
 #include <math.h>
 
-#define STBI_NO_PNG
 #define STBI_NO_BMP
 #define STBI_NO_PSD
 #define STBI_NO_TGA
@@ -51,9 +50,9 @@ void loop(int mode){
          i, view_angle,
          xtemp, ytemp,
          xprime, yprime,
-         theta = 2*M_PI,
-         horizon = 0,
-         height;
+         theta = M_PI,
+         horizon = h/2,
+         height, tilt = 0;
   int i_dest, inc,
       ix, iy;
   char c;
@@ -68,15 +67,21 @@ void loop(int mode){
   x0 = -w/2;
   y0 = h/2;
 
-  height = 1;
+  height = 3;
 
   do {
     if(c == 'q' || c == 27) { stop(); }
     
     if(c == 'w') { y0 += 1; }
     if(c == 's') { y0 -= 1; }
-    if(c == 'a') { theta += 0.1; }
-    if(c == 'd') { theta -= 0.1; }
+    if(c == 'a') { theta += 0.01; }
+    if(c == 'd') { theta -= 0.01; }
+    
+    if(c == 'e') { tilt += 5; }
+    if(c == 'c') { tilt -= 5; }
+
+    if(c == 'r') { height += 1; }
+    if(c == 'v') { height -= 1; }
 
     printf("\033[0;0H");
 
@@ -94,7 +99,7 @@ void loop(int mode){
         if(y >= horizon){
           x = floor(fmod((i/n),w))-(w/2);
           z = y/height;
-          view_angle = y-(h/2);
+          view_angle = y-(h/2)+tilt;
 
           if(view_angle == 0) { view_angle = 1; }
 
@@ -119,7 +124,11 @@ void loop(int mode){
 
       for(iy=0;iy<ws.ws_row;iy++){
         for(ix=0;ix<ws.ws_col;ix++){
-          printf("\033[48;2;%i;%i;%im ", out[(iy*iw*in)+(ix*in)], out[(iy*iw*in)+(ix*in)+1], out[(iy*iw*in)+(ix*in)+2]);
+          if(iy < ws.ws_row/2){
+            printf("\033[48;2;0;0;0m ");
+          } else {
+            printf("\033[48;2;%i;%i;%im ", out[(iy*iw*in)+(ix*in)], out[(iy*iw*in)+(ix*in)+1], out[(iy*iw*in)+(ix*in)+2]);
+          }
         }
       }
     }
