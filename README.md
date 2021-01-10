@@ -12,6 +12,8 @@ Affine mode:
 
 ![Affine mode](https://github.com/Cubified/affine/blob/main/screenshots/affine.gif)
 
+(Runs extremely smoothly in alacritty, GIF reduced to 10fps for filesize).
+
 ### Compiling and Running
 
 `affine` does not depend on anything other than the C standard library and [stb_image](https://github.com/nothings/stb), meaning it can be compiled with:
@@ -29,4 +31,5 @@ Where `mode` is one of:
 
 ### To-do
 - Animated GIF support
-- Rendering optimizations
+- Rendering optimizations (high CPU usage from nonblocking input loop)
+- Simply math in affine mode

@@ -3,8 +3,8 @@ all: affine
 CC=gcc
 
 LIBS=-lm
-CFLAGS=-Os -pipe -s
-DEBUGCFLAGS=-Og -pipe -g
+CFLAGS=-O3 -pipe -s
+DEBUGCFLAGS=-Og -pipe -g -Wall -Wextra
 
 INPUT=affine.c
 OUTPUT=affine
